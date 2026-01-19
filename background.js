@@ -8,7 +8,7 @@ async function loadTechData() {
         const response = await fetch(chrome.runtime.getURL('data/technologies.json'));
         techData = await response.json();
     } catch (e) {
-        console.error('[WebAnalyst] Failed to load technology data:', e);
+        console.error('[WebDepth] Failed to load technology data:', e);
     }
 }
 
