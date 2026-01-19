@@ -1,12 +1,14 @@
-# WebAnalyst Chrome Extension
+# WebDepth Chrome Extension
 
-WebAnalyst is a Chrome extension that analyzes the current website to identify the technologies used, including frameworks, libraries, CMS, and hosting providers. It detects technologies by analyzing:
+WebDepth is a Chrome extension that analyzes the current website to identify the technologies used, including frameworks, libraries, CMS, and hosting providers. It detects technologies by analyzing:
+
 - Global JavaScript variables (`window` objects)
 - DOM elements (Meta tags, Selector matches)
 - Script sources
 - HTTP Response Headers
 
 ## Features
+
 - **Technology Detection**: Identifies React, Vue, Angular, jQuery, WordPress, Shopify, and more.
 - **Hosting & Server Detection**: Detects Vercel, Netlify, AWS, Nginx, Apache via headers.
 - **Clean UI**: Modern, dark-mode-ready popup interface.
@@ -29,6 +31,7 @@ WebAnalyst is a Chrome extension that analyzes the current website to identify t
 ## Development
 
 ### Project Structure
+
 - `manifest.json`: Extension configuration (Manifest V3).
 - `data/technologies.json`: The detection rules database.
 - `scripts/content.js`: Content script for DOM analysis and script injection.
@@ -68,6 +71,7 @@ Add a new key with the name of the technology. The value is an object with the f
 #### Examples
 
 **Adding a new Framework (e.g., Svelte):**
+
 ```json
 "Svelte": {
   "categories": ["JavaScript Framework"],
@@ -77,6 +81,7 @@ Add a new key with the name of the technology. The value is an object with the f
 ```
 
 **Adding a new Server (e.g., Caddy):**
+
 ```json
 "Caddy": {
   "categories": ["Web Server"],
