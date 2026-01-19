@@ -1,123 +1,244 @@
 // Content script - runs in Isolated World
-
-let techData = null;
-
-// Load technology data
-async function loadData() {
-    const url = chrome.runtime.getURL('data/technologies.json');
-    const response = await fetch(url);
-    techData = await response.json();
-}
-
-// Inject the detector script
-function injectDetector() {
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('scripts/detector.js');
-    script.onload = function () {
-        this.remove();
-        // Once loaded, send the keys to check
-        initiateCheck();
-    };
-    (document.head || document.documentElement).appendChild(script);
-}
-
-function initiateCheck() {
-    if (!techData) return;
-
-    // 1. DOM/Meta checks (Isolated World can see DOM)
-    const detectedTechnologies = [];
-
-    // Check technologies
-    for (const [name, rules] of Object.entries(techData)) {
-        let match = false;
-
-        // Check Selectors
-        if (rules.selector) {
-            rules.selector.forEach(selector => {
-                if (document.querySelector(selector)) match = true;
-            });
-        }
-
-        // Check Meta Tags
-        if (rules.meta) {
-            for (const [metaName, metaContent] of Object.entries(rules.meta)) {
-                const metaTag = document.querySelector(`meta[name="${metaName}"]`);
-                if (metaTag && metaTag.content.includes(metaContent)) match = true;
-            }
-        }
-
-        // Check Script Src
-        if (rules.scriptSrc) {
-            // Prepare to check scripts
-            const scripts = Array.from(document.scripts);
-            rules.scriptSrc.forEach(srcFragment => {
-                if (scripts.some(s => s.src && s.src.includes(srcFragment))) {
-                    match = true;
-                }
-            });
-        }
-
-        if (match) {
-            detectedTechnologies.push({ name, categories: rules.categories });
-        }
+(function () {
+    // Guard against duplicate execution
+    if (window.__webAnalystInitialized) {
+        return;
     }
+    window.__webAnalystInitialized = true;
 
-    // 2. Prepare Window variable checks
-    const windowKeysToCheck = [];
-    const keyToTechMap = {}; // key -> techName
+    console.log('[WebAnalyst] Content script running');
 
-    for (const [name, rules] of Object.entries(techData)) {
-        if (rules.window) {
-            rules.window.forEach(key => {
-                windowKeysToCheck.push(key);
-                if (!keyToTechMap[key]) keyToTechMap[key] = [];
-                keyToTechMap[key].push(name);
-            });
+    let techData = null;
+    let analysisComplete = false;
+    let detectedTechnologies = [];
+
+    // Handle messages from popup/background
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.type === 'ping') {
+            sendResponse({ status: 'ready', analysisComplete });
+            return true;
         }
-    }
-
-    // Send keys to Main World
-    window.dispatchEvent(new CustomEvent('WebAnalyst_Check', { detail: windowKeysToCheck }));
-
-    // Listen for results from Main World
-    window.addEventListener('message', function (event) {
-        if (event.source !== window) return;
-        if (event.data.type && event.data.type === 'WebAnalyst_Result') {
-            const detectedKeys = event.data.detected;
-
-            detectedKeys.forEach(key => {
-                const techNames = keyToTechMap[key];
-                if (techNames) {
-                    techNames.forEach(techName => {
-                        // Avoid duplicates
-                        if (!detectedTechnologies.find(t => t.name === techName)) {
-                            detectedTechnologies.push({
-                                name: techName,
-                                categories: techData[techName].categories
-                            });
-                        }
-                    });
-                }
-            });
-
-            // Notify background
-            chrome.runtime.sendMessage({ type: 'analysis_complete', data: detectedTechnologies });
+        if (message.type === 'getResults') {
+            sendResponse({ data: detectedTechnologies });
+            return true;
+        }
+        if (message.type === 'analyze') {
+            runAnalysis();
+            sendResponse({ status: 'started' });
+            return true;
         }
     });
 
-    // Save preliminary DOM results while waiting for Window results
-    if (detectedTechnologies.length > 0) {
-        chrome.runtime.sendMessage({ type: 'analysis_complete', data: detectedTechnologies });
+    async function loadTechData() {
+        try {
+            const url = chrome.runtime.getURL('data/technologies.json');
+            const response = await fetch(url);
+            techData = await response.json();
+            console.log('[WebAnalyst] Technology data loaded:', Object.keys(techData).length, 'items');
+        } catch (e) {
+            console.error('[WebAnalyst] Failed to load technology data:', e);
+        }
     }
-}
 
+    function injectDetector() {
+        return new Promise((resolve) => {
+            // Check if already injected
+            if (document.querySelector('script[data-webanalyst-detector]')) {
+                resolve(true);
+                return;
+            }
 
-// Initialize
-loadData().then(() => {
-    // If document is already loaded
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        injectDetector();
-    } else {
-        window.addEventListener('DOMContentLoaded', injectDetector);
+            const script = document.createElement('script');
+            script.src = chrome.runtime.getURL('scripts/detector.js');
+            script.setAttribute('data-webanalyst-detector', 'true');
+
+            script.onload = function () {
+                this.remove();
+                resolve(true);
+            };
+
+            script.onerror = function () {
+                console.warn('[WebAnalyst] Detector blocked by CSP, continuing with DOM checks only');
+                this.remove();
+                resolve(false);
+            };
+
+            (document.head || document.documentElement).appendChild(script);
+        });
     }
-});
+
+    function runDOMChecks() {
+        const results = [];
+        if (!techData) return results;
+
+        for (const [name, rules] of Object.entries(techData)) {
+            let match = false;
+
+            // Check CSS selectors
+            if (rules.selector) {
+                for (const selector of rules.selector) {
+                    try {
+                        if (document.querySelector(selector)) {
+                            match = true;
+                            break;
+                        }
+                    } catch (e) {
+                        // Invalid selector
+                    }
+                }
+            }
+
+            // Check meta tags
+            if (!match && rules.meta) {
+                for (const [metaName, metaContent] of Object.entries(rules.meta)) {
+                    const metaTag = document.querySelector(`meta[name="${metaName}"]`);
+                    if (metaTag && metaTag.content && metaTag.content.includes(metaContent)) {
+                        match = true;
+                        break;
+                    }
+                }
+            }
+
+            // Check script sources
+            if (!match && rules.scriptSrc) {
+                const scripts = Array.from(document.scripts);
+                for (const srcFragment of rules.scriptSrc) {
+                    if (scripts.some(s => s.src && s.src.includes(srcFragment))) {
+                        match = true;
+                        break;
+                    }
+                }
+            }
+
+            if (match) {
+                results.push({ name, categories: rules.categories });
+            }
+        }
+
+        return results;
+    }
+
+    function checkWindowVariables() {
+        return new Promise((resolve) => {
+            const windowKeysToCheck = [];
+            const keyToTechMap = {};
+
+            for (const [name, rules] of Object.entries(techData)) {
+                if (rules.window) {
+                    rules.window.forEach(key => {
+                        windowKeysToCheck.push(key);
+                        if (!keyToTechMap[key]) keyToTechMap[key] = [];
+                        keyToTechMap[key].push(name);
+                    });
+                }
+            }
+
+            if (windowKeysToCheck.length === 0) {
+                resolve([]);
+                return;
+            }
+
+            let responded = false;
+
+            const messageHandler = (event) => {
+                if (event.source !== window) return;
+                if (!event.data) return;
+
+                if (event.data.type === 'WebAnalyst_Result') {
+                    responded = true;
+                    window.removeEventListener('message', messageHandler);
+
+                    const results = [];
+                    const detectedKeys = event.data.detected || [];
+
+                    detectedKeys.forEach(key => {
+                        const techNames = keyToTechMap[key];
+                        if (techNames) {
+                            techNames.forEach(techName => {
+                                if (!results.find(t => t.name === techName)) {
+                                    results.push({
+                                        name: techName,
+                                        categories: techData[techName].categories
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+                    resolve(results);
+                }
+            };
+
+            window.addEventListener('message', messageHandler);
+
+            // Use postMessage for cross-world communication
+            window.postMessage({ type: 'WebAnalyst_Check', keys: windowKeysToCheck }, '*');
+
+            // Timeout fallback
+            setTimeout(() => {
+                if (!responded) {
+                    window.removeEventListener('message', messageHandler);
+                    console.warn('[WebAnalyst] Window check timed out');
+                    resolve([]);
+                }
+            }, 1500);
+        });
+    }
+
+    async function runAnalysis() {
+        if (!techData) {
+            await loadTechData();
+        }
+
+        if (!techData) {
+            sendResults([]);
+            return;
+        }
+
+        // Run DOM checks first
+        const domResults = runDOMChecks();
+        console.log('[WebAnalyst] DOM check results:', domResults.length);
+
+        // Inject detector and check window variables
+        await injectDetector();
+
+        // Small delay to ensure detector is ready
+        await new Promise(r => setTimeout(r, 50));
+
+        const windowResults = await checkWindowVariables();
+        console.log('[WebAnalyst] Window check results:', windowResults.length);
+
+        // Combine results, avoiding duplicates
+        const allResults = [...domResults];
+        windowResults.forEach(wr => {
+            if (!allResults.find(r => r.name === wr.name)) {
+                allResults.push(wr);
+            }
+        });
+
+        sendResults(allResults);
+    }
+
+    function sendResults(results) {
+        detectedTechnologies = results;
+        analysisComplete = true;
+        console.log('[WebAnalyst] Analysis complete:', results.length, 'technologies detected');
+        chrome.runtime.sendMessage({ type: 'analysis_complete', data: results });
+    }
+
+    // Initialize
+    async function init() {
+        await loadTechData();
+
+        if (document.readyState === 'complete') {
+            runAnalysis();
+        } else if (document.readyState === 'interactive') {
+            // DOM ready but resources still loading - good enough
+            runAnalysis();
+        } else {
+            window.addEventListener('DOMContentLoaded', () => runAnalysis());
+        }
+    }
+
+    init();
+})();

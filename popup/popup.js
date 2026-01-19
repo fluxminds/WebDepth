@@ -5,14 +5,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function showView(viewId) {
         [loadingView, resultsView, emptyView].forEach(view => {
-            if (view.id === viewId) view.classList.remove('hidden');
-            else view.classList.add('hidden');
+            view.classList.toggle('hidden', view.id !== viewId);
         });
-    }
-
-    async function getActiveTab() {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        return tab;
     }
 
     function renderResults(technologies) {
@@ -44,14 +38,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const card = document.createElement('div');
                 card.className = 'tech-card';
 
-                // Placeholder icon generation based on name letter
                 const letter = tech.name.charAt(0).toUpperCase();
-
                 card.innerHTML = `
                     <div class="tech-icon">${letter}</div>
                     <div class="tech-info">
                         <div class="tech-name">${tech.name}</div>
-                        <!-- <div class="tech-desc">Detected via ${tech.method || 'analysis'}</div> -->
                     </div>
                 `;
                 groupEl.appendChild(card);
@@ -63,32 +54,71 @@ document.addEventListener('DOMContentLoaded', async () => {
         showView('results');
     }
 
-    const tab = await getActiveTab();
-    if (tab) {
-        const storageKey = `tab_${tab.id}`;
-
-        // Check storage first
-        chrome.storage.local.get([storageKey], (result) => {
-            const data = result[storageKey];
-            if (data) {
-                renderResults(data);
-            } else {
-                // If no data, maybe content script hasn't finished or page needs reload.
-                // Or we can try to inject/re-ping.
-                // For now, show empty or loading.
-                // Let's listen for updates.
-            }
-        });
+    async function getActiveTab() {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        return tab;
     }
 
-    // Listen for live updates
+    const tab = await getActiveTab();
+    if (!tab) {
+        showView('empty');
+        return;
+    }
+
+    const storageKey = `tab_${tab.id}`;
+
+    // Listen for storage updates
     chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'local' && tab) {
-            const storageKey = `tab_${tab.id}`;
-            if (changes[storageKey]) {
-                renderResults(changes[storageKey].newValue);
-            }
+        if (namespace === 'local' && changes[storageKey]) {
+            renderResults(changes[storageKey].newValue);
         }
     });
 
+    // Check for existing results first
+    const result = await chrome.storage.local.get([storageKey]);
+    if (result[storageKey]) {
+        renderResults(result[storageKey]);
+        return;
+    }
+
+    // No stored results - check if content script is ready
+    try {
+        const response = await chrome.tabs.sendMessage(tab.id, { type: 'ping' });
+
+        if (response && response.analysisComplete) {
+            // Analysis done, get results directly
+            const resultsResponse = await chrome.tabs.sendMessage(tab.id, { type: 'getResults' });
+            if (resultsResponse && resultsResponse.data) {
+                renderResults(resultsResponse.data);
+                return;
+            }
+        }
+
+        // Content script exists but analysis not complete - request it
+        await chrome.tabs.sendMessage(tab.id, { type: 'analyze' });
+        // Wait for storage update via listener
+
+    } catch (e) {
+        // Content script not available - try to inject it
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['scripts/content.js']
+            });
+            // Script will run analysis automatically
+        } catch (err) {
+            // Injection failed (probably a restricted page)
+            const loadingText = loadingView.querySelector('p');
+            if (loadingText) {
+                loadingText.textContent = 'Cannot analyze this page';
+            }
+        }
+    }
+
+    // Timeout fallback - show empty if no results after 5 seconds
+    setTimeout(() => {
+        if (!loadingView.classList.contains('hidden')) {
+            showView('empty');
+        }
+    }, 5000);
 });
