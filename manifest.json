@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "WebAnalyst",
+  "name": "WebDepth",
   "version": "1.0",
   "description": "Analyze web technologies used on the current website.",
   "permissions": [

@@ -6,7 +6,7 @@
     }
     window.__webAnalystInitialized = true;
 
-    console.log('[WebAnalyst] Content script running');
+    console.log('[WebDepth] Content script running');
 
     let techData = null;
     let analysisComplete = false;
@@ -34,9 +34,9 @@
             const url = chrome.runtime.getURL('data/technologies.json');
             const response = await fetch(url);
             techData = await response.json();
-            console.log('[WebAnalyst] Technology data loaded:', Object.keys(techData).length, 'items');
+            console.log('[WebDepth] Technology data loaded:', Object.keys(techData).length, 'items');
         } catch (e) {
-            console.error('[WebAnalyst] Failed to load technology data:', e);
+            console.error('[WebDepth] Failed to load technology data:', e);
         }
     }
 
@@ -58,7 +58,7 @@
             };
 
             script.onerror = function () {
-                console.warn('[WebAnalyst] Detector blocked by CSP, continuing with DOM checks only');
+                console.warn('[WebDepth] Detector blocked by CSP, continuing with DOM checks only');
                 this.remove();
                 resolve(false);
             };
@@ -178,7 +178,7 @@
             setTimeout(() => {
                 if (!responded) {
                     window.removeEventListener('message', messageHandler);
-                    console.warn('[WebAnalyst] Window check timed out');
+                    console.warn('[WebDepth] Window check timed out');
                     resolve([]);
                 }
             }, 1500);
@@ -197,7 +197,7 @@
 
         // Run DOM checks first
         const domResults = runDOMChecks();
-        console.log('[WebAnalyst] DOM check results:', domResults.length);
+        console.log('[WebDepth] DOM check results:', domResults.length);
 
         // Inject detector and check window variables
         await injectDetector();
@@ -206,7 +206,7 @@
         await new Promise(r => setTimeout(r, 50));
 
         const windowResults = await checkWindowVariables();
-        console.log('[WebAnalyst] Window check results:', windowResults.length);
+        console.log('[WebDepth] Window check results:', windowResults.length);
 
         // Combine results, avoiding duplicates
         const allResults = [...domResults];
@@ -222,7 +222,7 @@
     function sendResults(results) {
         detectedTechnologies = results;
         analysisComplete = true;
-        console.log('[WebAnalyst] Analysis complete:', results.length, 'technologies detected');
+        console.log('[WebDepth] Analysis complete:', results.length, 'technologies detected');
         chrome.runtime.sendMessage({ type: 'analysis_complete', data: results });
     }
 

@@ -20,12 +20,12 @@ WebDepth is a Chrome extension that analyzes the current website to identify the
 2. Open Chrome and navigate to `chrome://extensions/`.
 3. Toggle **Developer mode** in the top right corner.
 4. Click **Load unpacked**.
-5. Select the `webanalyst` directory.
+5. Select the `WebDepth` directory.
 
 ## Usage
 
 1. Navigate to any website.
-2. Click the WebAnalyst icon in the Chrome toolbar.
+2. Click the WebDepth icon in the Chrome toolbar.
 3. View the list of detected technologies grouped by category.
 
 ## Development
