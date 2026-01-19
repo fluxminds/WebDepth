@@ -6,8 +6,6 @@ WebAnalyst is a Chrome extension that analyzes the current website to identify t
 - Script sources
 - HTTP Response Headers
 
-![WebAnalyst Screenshot](images/icon128.png)
-
 ## Features
 - **Technology Detection**: Identifies React, Vue, Angular, jQuery, WordPress, Shopify, and more.
 - **Hosting & Server Detection**: Detects Vercel, Netlify, AWS, Nginx, Apache via headers.
